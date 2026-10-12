@@ -1,0 +1,133 @@
+# ── LOGSOC-WEB Configuration (TEMPLATE) ──
+# Copy to config.yaml and fill in values. Env vars (LOGSOC_RETENTION_*)
+# always take precedence over file values.
+# DO NOT commit config.yaml with real secrets — only this template.
+
+# ── Application ──
+app:
+  name: LOGSOC
+  version: 0.10.0
+  env: production
+
+# ── Database ──
+database:
+  host: 127.0.0.1
+  port: 3306
+  user: logsoc
+  password: changeme
+  database: logsoc
+
+# ── ClickHouse ──
+clickhouse:
+  host: 127.0.0.1
+  http_port: 8123
+  native_port: 9000
+  user: default
+  password: ""
+  database: logsoc
+
+# ── FastAPI ──
+api:
+  host: 0.0.0.0
+  port: 8000
+  workers: 2
+  log_level: info
+  cors_origins: "*"
+
+# ── JWT ──
+jwt:
+  secret: change-me-to-a-secure-random-string
+  expire_hours: 24
+  refresh_expire_days: 7
+  algorithm: HS256
+
+# ── MFA Policy ──
+mfa:
+  required: false  # If true, ALL users MUST have MFA active
+  enforce_for_roles: ["admin"]  # Roles that require MFA setup
+
+# ── Trusted subnets (for unknown LAN detection) ──
+trusted_subnets:
+  - "192.168.0.0/16"
+  - "10.0.0.0/8"
+  - "127.0.0.0/8"
+  - "172.16.0.0/12"
+
+# ── WebSocket ──
+websocket:
+  heartbeat_interval: 30
+
+# ── Plugin System ──
+plugins:
+  dir: plugins
+
+# ─────────────────────────────────────────────
+# Retention Module
+# ─────────────────────────────────────────────
+retention:
+
+  sweep:
+    cron: "02:00"           # HH:MM UTC
+    timeout_sec: 300
+    run_on_start: true
+    log_level: INFO
+
+  minio:
+    enabled: false
+    endpoint: http://127.0.0.1:9000
+    access_key: ""
+    secret_key: ""
+    bucket_logs: logsoc-archives
+    bucket_yara: logsoc-yara
+
+  archive:
+    enabled: false
+    tier: noop              # noop | clickhouse_to_minio | local_fs
+    local_dir: /var/lib/logsoc/archives
+
+  defaults:
+    siem_logs:
+      hot_days: 90
+      warm_days: 365
+      cold_days: 2555
+      anonymize_after_days: 180
+      erase_after_days: null
+    access_logs:
+      hot_days: 30
+      warm_days: 90
+      cold_days: 365
+      anonymize_after_days: 60
+      erase_after_days: 365
+    audit_logs:
+      hot_days: 730
+      warm_days: 1825
+      cold_days: 3650
+      anonymize_after_days: null
+      erase_after_days: null
+    yara_rules:
+      hot_days: 36500
+      warm_days: 0
+      cold_days: 0
+      anonymize_after_days: null
+      erase_after_days: null
+    asset_compliance:
+      hot_days: 730
+      warm_days: 1825
+      cold_days: 3650
+      anonymize_after_days: null
+      erase_after_days: null
+
+# ── Seed (mise à jour du référentiel de gouvernance) ──
+# Deux formats d'URL de dépôt sont supportés (Paramètres → Maintenance →
+# Référentiel de gouvernance) :
+#   Gitea  : https://<votre-gitea>/<owner>/<repo>            (défaut branche master)
+#   GitHub : https://github.com/<owner>/<repo>               (défaut branche master)
+#            ou https://github.com/<owner>/<repo>/tree/<branche> pour une branche
+#            explicite — le raw est servi depuis raw.githubusercontent.com.
+# Le dépôt doit contenir les seeds dans sql/seeds/ (sauf repo dédié
+# logsoc-referentiel, fichiers à plat). repo_url public GitHub → laisser
+# auth_user/auth_token vides.
+seed:
+  repo_url: "https://github.com/logsoc-oss/logsoc"
+  auth_user: ""
+  auth_token: ""

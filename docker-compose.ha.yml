@@ -1,0 +1,63 @@
+# LogSOC HA — Docker Compose
+# 2 API containers + nginx load balancer
+# Usage: docker-compose -f docker-compose.ha.yml up -d
+# Requires: MariaDB + ClickHouse already running on host (network=host mode)
+
+version: "3.8"
+
+services:
+  logsoc-api-1:
+    build: .
+    image: logsoc-web-api:latest
+    container_name: logsoc-api-1
+    network_mode: host
+    restart: unless-stopped
+    env_file: /etc/logsoc/api.env
+    environment:
+      LOGSOC_ENV: production
+      LOGSOC_CONFIG: /opt/logsoc-web/config.yaml
+      INSTANCE_ID: api-1
+    volumes:
+      - /opt/logsoc-web/config.yaml:/opt/logsoc-web/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  logsoc-api-2:
+    build: .
+    image: logsoc-web-api:latest
+    container_name: logsoc-api-2
+    network_mode: host
+    restart: unless-stopped
+    env_file: /etc/logsoc/api.env
+    environment:
+      LOGSOC_ENV: production
+      LOGSOC_CONFIG: /opt/logsoc-web/config.yaml
+      INSTANCE_ID: api-2
+    volumes:
+      - /opt/logsoc-web/config.yaml:/opt/logsoc-web/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # nginx load balancer (optional, if not using Hestia's nginx)
+  # logsoc-lb:
+  #   image: nginx:alpine
+  #   container_name: logsoc-lb
+  #   ports:
+  #     - "8080:80"
+  #   volumes:
+  #     - ./nginx-lb.conf:/etc/nginx/conf.d/default.conf:ro
+  #   depends_on:
+  #     - logsoc-api-1
+  #     - logsoc-api-2
+
+# Note: For true HA with network_mode: host, api-2 needs a different port.
+# Set PORT=8001 in a second env file or override the uvicorn port.
+# Alternatively, use nginx upstream config on Hestia to load-balance.
+# MariaDB replication: see scripts/setup-mariadb-replication.sh
+# ClickHouse replication: see scripts/setup-clickhouse-replica.sh

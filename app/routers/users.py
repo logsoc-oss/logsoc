@@ -1,0 +1,458 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from typing import List, Optional
+import bcrypt
+from datetime import datetime, UTC
+import secrets
+import string
+from pydantic import BaseModel
+from app.database import get_db
+from app.models import User, UserMfa, RolePermission, AuditTrail
+from app.schemas import UserCreate, UserUpdate, UserResponse
+from app.routers.auth import get_current_user, require_role
+from app.roles import join_business_roles
+
+router = APIRouter()
+
+# ── Valid roles (Phase 1 RBAC: 8 roles) ──
+VALID_ROLES = ('superadmin', 'admin', 'soc_analyst', 'auditor', 'dpo', 'rssi', 'compliance_officer', 'viewer')
+
+
+def normalize_business_role(raw) -> str | None:
+    """Canonise l'entrée multi-casquettes: 'RSSI /  DSI' -> 'dsi / rssi'.
+    None/vide -> None. Utilise join_business_roles (dédoublonne, minuscules)."""
+    if raw is None:
+        return None
+    joined = join_business_roles(str(raw).split("/"))
+    return joined or None
+
+
+class RoleChangeRequest(BaseModel):
+    role: str
+
+
+class PermissionResponse(BaseModel):
+    module: str
+    can_read: bool
+    can_write: bool
+    can_delete: bool
+    can_export: bool
+    model_config = {'from_attributes': True}
+
+
+class RolePermissionsResponse(BaseModel):
+    role: str
+    permissions: List[PermissionResponse]
+
+
+@router.get("/roles", response_model=List[RolePermissionsResponse])
+def list_roles_with_permissions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role('admin')),
+):
+    """List all roles with their granular permissions (admin only)."""
+    perms = db.query(RolePermission).order_by(RolePermission.role, RolePermission.module).all()
+
+    # Group by role
+    role_map: dict[str, list[PermissionResponse]] = {}
+    for p in perms:
+        role_map.setdefault(p.role, []).append(
+            PermissionResponse(
+                module=p.module,
+                can_read=p.can_read,
+                can_write=p.can_write,
+                can_delete=p.can_delete,
+                can_export=p.can_export,
+            )
+        )
+
+    # Also include roles that may not have any rows yet
+    for r in VALID_ROLES:
+        role_map.setdefault(r, [])
+
+    return [
+        RolePermissionsResponse(role=r, permissions=role_map[r])
+        for r in VALID_ROLES
+    ]
+
+
+@router.get("/me/permissions", response_model=List[PermissionResponse])
+def get_my_permissions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the current user's effective permissions."""
+    perms = db.query(RolePermission).filter(
+        RolePermission.role == current_user.role,
+    ).order_by(RolePermission.module).all()
+
+    # Superadmin gets implicit full permissions on all modules
+    if current_user.role == 'superadmin':
+        all_modules = [
+            'events', 'alerts', 'cases', 'agents', 'yara', 'sigma',
+            'correlation', 'threat_intel', 'assets', 'users',
+            'compliance', 'governance', 'risks', 'reporting', 'soar',
+        ]
+        return [
+            PermissionResponse(module=m, can_read=True, can_write=True, can_delete=True, can_export=True)
+            for m in all_modules
+        ]
+
+    return [
+        PermissionResponse(
+            module=p.module,
+            can_read=p.can_read,
+            can_write=p.can_write,
+            can_delete=p.can_delete,
+            can_export=p.can_export,
+        )
+        for p in perms
+    ]
+
+
+class ModulePermissionUpdate(BaseModel):
+    can_read: bool = False
+    can_write: bool = False
+    can_delete: bool = False
+    can_export: bool = False
+
+
+class ModuleActiveUpdate(BaseModel):
+    is_active: bool = True
+
+
+@router.get("/modules/status")
+def get_modules_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """État d'activation des modules (authentifié) — sert au masquage du menu."""
+    from app.module_registry import get_module_flags, KNOWN_MODULES
+    flags = get_module_flags(db)
+    return [
+        {"module": m, "is_active": flags.get(m, True)}
+        for m in KNOWN_MODULES
+    ]
+
+
+@router.put("/modules/{module}/active")
+def set_module_status(
+    module: str,
+    body: ModuleActiveUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role('admin')),
+):
+    """Active/désactive un module fonctionnellement (admin only).
+    Désactivé = 503 pour tous sauf superadmin + menu masqué."""
+    from app.module_registry import set_module_active, KNOWN_MODULES, get_module_flags
+    if module not in KNOWN_MODULES:
+        raise HTTPException(status_code=400, detail=f"Module inconnu: {module}")
+    if module == 'users':
+        raise HTTPException(status_code=403, detail="Le module Utilisateurs ne peut pas être désactivé (verrou d'administration)")
+    set_module_active(db, module, body.is_active)
+    flags = get_module_flags(db)
+    return {"module": module, "is_active": flags.get(module, True)}
+
+
+@router.put("/roles/{role}/modules/{module}", response_model=PermissionResponse)
+def update_role_module_permission(
+    role: str,
+    module: str,
+    payload: ModulePermissionUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role('admin')),
+):
+    """Met à jour les permissions d'un rôle sur un module (admin only).
+    Refuse superadmin (toujours full implicitement) et les rôles inconnus.
+    Effet immédiat: la garde require_permission relit la DB à chaque requête."""
+    if role not in VALID_ROLES:
+        raise HTTPException(status_code=400, detail=f"Rôle inconnu: {role}")
+    if role == 'superadmin':
+        raise HTTPException(status_code=403, detail="Superadmin possède implicitement toutes les permissions")
+    p = db.query(RolePermission).filter(
+        RolePermission.role == role,
+        RolePermission.module == module,
+    ).first()
+    if not p:
+        # upsert: crée la cellule si elle n'existe pas
+        p = RolePermission(role=role, module=module)
+        db.add(p)
+    p.can_read = payload.can_read
+    p.can_write = payload.can_write
+    p.can_delete = payload.can_delete
+    p.can_export = payload.can_export
+    db.commit()
+    db.refresh(p)
+    return PermissionResponse(
+        module=p.module,
+        can_read=bool(p.can_read),
+        can_write=bool(p.can_write),
+        can_delete=bool(p.can_delete),
+        can_export=bool(p.can_export),
+    )
+
+
+@router.put("/{user_id}/role", response_model=UserResponse)
+def change_user_role(
+    user_id: int,
+    payload: RoleChangeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role('admin')),
+):
+    """Change a user's role (admin only)."""
+    if payload.role not in VALID_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid role. Must be one of: {', '.join(VALID_ROLES)}",
+        )
+
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Prevent non-superadmin from assigning superadmin
+    if payload.role == 'superadmin' and current_user.role != 'superadmin':
+        raise HTTPException(status_code=403, detail="Only superadmin can assign the superadmin role")
+
+    # Prevent demoting a superadmin unless you are superadmin
+    if target.role == 'superadmin' and current_user.role != 'superadmin':
+        raise HTTPException(status_code=403, detail="Only superadmin can demote a superadmin")
+
+    target.role = payload.role
+    db.commit()
+    db.refresh(target)
+    return target
+
+
+# ── Existing endpoints ──
+
+def _enrich_user(user: User, db: Session) -> dict:
+    """Build a dict suitable for UserResponse, adding mfa_enabled from user_mfa."""
+    mfa = db.query(UserMfa).filter(UserMfa.user_id == user.id).first()
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "role": user.role,
+        "display_name": user.display_name,
+        "is_active": user.is_active,
+        "phone": getattr(user, "phone", None),
+        "business_role": getattr(user, "business_role", None),
+        "is_signatory": bool(getattr(user, "is_signatory", False)),
+        "last_login_at": user.last_login_at,
+        "created_at": user.created_at,
+        "role_expires_at": user.role_expires_at,
+        "mfa_enabled": mfa.enabled if mfa else False,
+        "mfa_setup_required": user.mfa_setup_required,
+    }
+
+
+@router.get("/", response_model=List[UserResponse])
+def list_users(
+    skip: int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if current_user.role not in ("superadmin", "admin"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    users = db.query(User).offset(skip).limit(limit).all()
+    return [_enrich_user(u, db) for u in users]
+
+
+@router.get("/me", response_model=UserResponse)
+def get_me(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return _enrich_user(current_user, db)
+
+
+@router.get("/{user_id}", response_model=UserResponse)
+def get_user(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if current_user.role not in ("superadmin", "admin") and current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return _enrich_user(user, db)
+
+
+@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def create_user(payload: UserCreate, db: Session = Depends(get_db), current_user: User = Depends(require_role("superadmin", "admin"))):
+    if db.query(User).filter(User.username == payload.username).first():
+        raise HTTPException(status_code=400, detail="Username already exists")
+    if db.query(User).filter(User.email == payload.email).first():
+        raise HTTPException(status_code=400, detail="Email already exists")
+    
+    if payload.role not in VALID_ROLES:
+        raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {', '.join(VALID_ROLES)}")
+    
+    hashed = bcrypt.hashpw(payload.password.encode(), bcrypt.gensalt()).decode()
+    user = User(
+        username=payload.username,
+        email=payload.email,
+        password_hash=hashed,
+        role=payload.role,
+        display_name=payload.display_name or payload.username,
+        business_role=normalize_business_role(getattr(payload, "business_role", None)),
+        is_signatory=getattr(payload, "is_signatory", False) or False,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return _enrich_user(user, db)
+
+
+@router.put("/{user_id}", response_model=UserResponse)
+def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if current_user.role not in ("superadmin", "admin") and current_user.id != user_id:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    is_admin = current_user.role in ("superadmin", "admin")
+    
+    if payload.email is not None:
+        user.email = payload.email
+    if payload.display_name is not None:
+        user.display_name = payload.display_name
+    if payload.phone is not None:
+        user.phone = payload.phone
+    if getattr(payload, "business_role", None) is not None:
+        user.business_role = normalize_business_role(payload.business_role)
+    if getattr(payload, "is_signatory", None) is not None:
+        user.is_signatory = bool(payload.is_signatory)
+    if payload.role is not None:
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Cannot change role")
+        if payload.role not in VALID_ROLES:
+            raise HTTPException(status_code=400, detail="Invalid role")
+        # Prevent non-superadmin from assigning superadmin
+        if payload.role == 'superadmin' and current_user.role != 'superadmin':
+            raise HTTPException(status_code=403, detail="Only superadmin can assign the superadmin role")
+        user.role = payload.role
+    if payload.is_active is not None:
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Cannot change active status")
+        user.is_active = payload.is_active
+    if payload.password is not None and payload.password.strip():
+        # Admin can change any password; a user can change their own
+        if not is_admin and current_user.id != user_id:
+            raise HTTPException(status_code=403, detail="Cannot change another user's password")
+        user.password_hash = bcrypt.hashpw(payload.password.encode(), bcrypt.gensalt()).decode()
+    if payload.mfa_enabled is not None:
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Cannot change MFA status")
+        mfa_row = db.query(UserMfa).filter(UserMfa.user_id == user.id).first()
+        if mfa_row:
+            mfa_row.enabled = payload.mfa_enabled
+        else:
+            mfa_row = UserMfa(user_id=user.id, secret='', enabled=payload.mfa_enabled)
+            db.add(mfa_row)
+    if payload.mfa_setup_required is not None:
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Cannot change MFA setup requirement")
+        user.mfa_setup_required = payload.mfa_setup_required
+    
+    db.commit()
+    db.refresh(user)
+    return _enrich_user(user, db)
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_user(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_role("superadmin"))):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.delete(user)
+    db.commit()
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Ticket #29 — Create auditor user with temporary access
+# ══════════════════════════════════════════════════════════════════════════
+
+class CreateAuditorRequest(BaseModel):
+    email: str
+    name: str
+    framework_ids: List[int] = []
+    asset_ids: List[int] = []
+    expires_at: datetime
+
+
+class CreateAuditorResponse(BaseModel):
+    user_id: int
+    temp_password: str
+    access_url: str
+
+
+def _gen_temp_password(length: int = 16) -> str:
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+
+@router.post(
+    "/auditor",
+    response_model=CreateAuditorResponse,
+    summary="Create auditor user with temporary access",
+    description="Create an auditor user with an expiration date. "
+    "Auth: superadmin/admin only. The auditor gets read-only access that "
+    "automatically expires at the specified date.",
+    status_code=status.HTTP_201_CREATED,
+)
+def create_auditor(
+    payload: CreateAuditorRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role('superadmin', 'admin')),
+):
+    # Check if email already exists
+    existing = db.query(User).filter(User.email == payload.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already exists")
+
+    # Generate username from email prefix
+    base_username = payload.email.split('@')[0].lower().replace('.', '_')
+    username = base_username
+    suffix = 1
+    while db.query(User).filter(User.username == username).first():
+        username = f"{base_username}_{suffix}"
+        suffix += 1
+
+    # Generate temp password and hash it
+    temp_password = _gen_temp_password()
+    hashed = bcrypt.hashpw(temp_password.encode(), bcrypt.gensalt()).decode()
+
+    # Create user with auditor role and expiration
+    user = User(
+        username=username,
+        email=payload.email,
+        password_hash=hashed,
+        role='auditor',
+        display_name=payload.name,
+        is_active=True,
+        role_expires_at=payload.expires_at,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    # Log to audit trail
+    trail = AuditTrail(
+        user_id=current_user.id,
+        action='create_auditor',
+        details={
+            'auditor_id': user.id,
+            'auditor_email': user.email,
+            'expires_at': payload.expires_at.isoformat(),
+        },
+    )
+    db.add(trail)
+    db.commit()
+
+    access_url = "/api/v1/audit/cross-mapping?framework=iso27001"
+
+    return CreateAuditorResponse(
+        user_id=user.id,
+        temp_password=temp_password,
+        access_url=access_url,
+    )

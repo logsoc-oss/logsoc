@@ -1,0 +1,45 @@
+type: phishing
+label: "Phishing — Checklist de crise"
+tasks:
+  - label: "Identifier les employés ciblés par l'attaque"
+    priority: critical
+    assigned_to: analyst
+  - label: "Bloquer les URLs et domaines malveillants (DNS, proxy, firewall)"
+    priority: critical
+    assigned_to: admin
+  - label: "Révoquer les sessions compromisées (reset tokens/MFA)"
+    priority: critical
+    assigned_to: admin
+  - label: "Forcer le reset des mots de passe pour les comptes impactés"
+    priority: critical
+    assigned_to: admin
+  - label: "Isoler les postes ayant cliqué sur le lien malveillant"
+    priority: high
+    assigned_to: admin
+  - label: "Analyser les headers et pièce jointe du phishing"
+    priority: high
+    assigned_to: analyst
+  - label: "Extraire les IOCs (IPs, domaines, hashes) et les diffuser"
+    priority: high
+    assigned_to: analyst
+  - label: "Vérifier si des données ont été exfiltrées"
+    priority: high
+    assigned_to: analyst
+  - label: "Notifier le RSSI et la direction"
+    priority: high
+    assigned_to: admin
+  - label: "Communiquer aux employés — ne pas cliquer, signaler"
+    priority: medium
+    assigned_to: admin
+  - label: "Notifier l'ANSSI si incident significatif (NIS2)"
+    priority: medium
+    assigned_to: compliance_officer
+  - label: "Surveiller les tentatives de connexion suspectes (logs SIEM)"
+    priority: high
+    assigned_to: analyst
+  - label: "Renforcer les règles anti-phishing (SPF, DKIM, DMARC)"
+    priority: medium
+    assigned_to: admin
+  - label: "Rédiger le post-mortem et leçons apprises"
+    priority: medium
+    assigned_to: analyst

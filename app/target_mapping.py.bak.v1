@@ -1,0 +1,194 @@
+"""Target → Asset mapping engine.
+
+Source de verite: table `target_asset_mappings` (editable via UI/admin).
+Les REGLES ci-dessous ne servent qu'a PROPOSER un asset au premier
+enregistrement d'un target inconnu. L'admin peut ensuite tout modifier
+sans toucher au code.
+
+Regle critique (decision Fabrice): "Active Directory" ne doit cibler que
+les serveurs Windows (controleurs de domaine), JAMAIS l'entree logique
+`identity` ni les postes de travail.
+"""
+import re
+from typing import Optional, List
+
+from sqlalchemy.orm import Session
+
+from app.models import AssetCmdb, TargetAssetMapping, ReferenceRequirement
+
+# ── Regles de proposition automatique (bootstrap uniquement) ──
+# Chaque regle: liste de regex sur le target (lowercase) + criteres de
+# selection des assets CMDB. La PREMIERE regle qui matche gagne.
+# Ordre important: regles specifiques avant generiques.
+
+_RULES = [
+    # --- Active Directory / controleurs de domaine: serveurs Windows UNIQUEMENT ---
+    {
+        "name": "active_directory_server",
+        "patterns": [
+            r"active\s*directory", r"\bad\b\b", r"\bntlm\b", r"\bkerberos\b",
+            r"contr[ôo]leur\s*de\s*domaine", r"domaine\s*windows",
+        ],
+        "asset_types": ("server", "server_bare", "server_vm"),
+        "os_like": "windows%",
+        "exclude_types": ("workstation", "identity"),
+    },
+    # --- Postes de travail / administration: workstations UNIQUEMENT ---
+    {
+        "name": "workstation",
+        "patterns": [
+            r"postes?\s*d['\"]?administration", r"postes?\s*utilisateurs?",
+            r"postes?\s*de\s*travail", r"pare-feu\s*local",
+            r"os\s*du\s*poste", r"stations?\s*de\s*travail",
+        ],
+        "asset_types": ("workstation",),
+    },
+    # --- Journalisation / SIEM / logs: le SIEM d'abord, sinon serveurs de logs ---
+    {
+        "name": "logging_server",
+        "patterns": [
+            r"journalisation", r"journaux?", r"\blog(s|ging)?\b",
+            r"\bsiem\b", r"centralisation\s*des\s*logs",
+        ],
+        "asset_types": ("middleware",),  # priorite 1: le SIEM (Clickhouse)
+    },
+    {
+        "name": "logging_host_server",
+        "patterns": [
+            r"journalisation", r"journaux?", r"\blog(s|ging)?\b",
+            r"\bsiem\b", r"centralisation\s*des\s*logs",
+        ],
+        "asset_types": ("server", "server_bare", "server_vm"),  # fallback: serveurs
+        "exclude_os_like": "windows%",  # pas les serveurs Windows (AD)
+    },
+    # --- Virtualisation: serveurs/hyperviseurs (pas les serveurs Windows) ---
+    {
+        "name": "virtualization_host",
+        "patterns": [r"virtualisation", r"hyperviseur"],
+        "asset_types": ("server", "server_bare", "server_vm"),
+        "exclude_os_like": "windows%",
+    },
+    # --- Bastion / administration distante ---
+    {
+        "name": "bastion",
+        "patterns": [r"\bbastion\b", r"\bmba\b", r"administration\s*distante"],
+        "asset_types": ("server", "server_bare", "server_vm"),
+    },
+    # --- Base de donnees ---
+    {
+        "name": "database",
+        "patterns": [r"\bbdd\b", r"base\s*de\s*donn[ée]es?", r"\bsgbd\b"],
+        "asset_types": ("database",),
+    },
+]
+
+# Targets volontairement non mappables par defaut (flous, pas d'asset dedie)
+_DEFAULT_IGNORED = [
+    r"t[ée]l[ée]phones?\s*mobiles?", r"\bsi\s*d['\"]?administration\b",
+    r"flux\s*d['\"]?administration", r"r[ée]seau\s*d['\"]?administration",
+    r"syst[èe]me\s*d['\"]?[ée]change\s*externe", r"\bipsec\b",
+    r"\btier\s*0\b.*ad",
+]
+
+
+def _norm(s: str) -> str:
+    return (s or "").strip().lower()
+
+
+def propose_asset_for_target(target_text: str, db: Session) -> Optional[dict]:
+    """Propose un asset CMDB pour un target donne via les regles de bootstrap.
+
+    Retourne {"asset_id": int, "match_rule": str} ou None si aucune regle
+    ne s'applique (decision manuelle requise).
+    """
+    t = _norm(target_text)
+    if not t:
+        return None
+
+    # Ignore par defaut ?
+    for pat in _DEFAULT_IGNORED:
+        if re.search(pat, t):
+            return {"asset_id": None, "match_rule": "ignored_by_default"}
+
+    # Premiere regle qui matche
+    for rule in _RULES:
+        if any(re.search(p, t) for p in rule["patterns"]):
+            q = db.query(AssetCmdb).filter(
+                AssetCmdb.asset_type.in_(rule["asset_types"]),
+                AssetCmdb.status == "active",
+            )
+            if rule.get("exclude_types"):
+                q = q.filter(~AssetCmdb.asset_type.in_(rule["exclude_types"]))
+            if rule.get("os_like"):
+                q = q.filter(AssetCmdb.os_name.like(rule["os_like"]))
+            if rule.get("exclude_os_like"):
+                q = q.filter(~AssetCmdb.os_name.like(rule["exclude_os_like"]))
+            asset = q.order_by(AssetCmdb.criticality.desc()).first()
+            if asset:
+                return {"asset_id": asset.id, "match_rule": rule["name"]}
+            return None  # regle matchee mais aucun asset ne convient
+    return None
+
+
+def bootstrap_mappings(db: Session, force: bool = False) -> dict:
+    """Enregistre chaque target distinct des exigences Configuration_Securite
+    avec une proposition auto (ou ignore par defaut). N'ecrase JAMAIS un
+    mapping existant sauf si force=True.
+
+    Retourne {"created": n, "existing": n, "proposed": n, "ignored": n}.
+    """
+    targets = [
+        row[0] for row in db.query(ReferenceRequirement.target)
+        .filter(
+            ReferenceRequirement.entry_type == "requirement",
+            ReferenceRequirement.deliverable_type == "Configuration_Securite",
+        )
+        .distinct()
+        .all()
+        if row[0]
+    ]
+    stats = {"created": 0, "existing": 0, "proposed": 0, "ignored": 0}
+    for target in targets:
+        existing = db.query(TargetAssetMapping).filter(
+            TargetAssetMapping.target_text == target
+        ).first()
+        if existing:
+            stats["existing"] += 1
+            continue
+        prop = propose_asset_for_target(target, db)
+        m = TargetAssetMapping(
+            target_text=target,
+            asset_id=(prop or {}).get("asset_id"),
+            match_rule=(prop or {}).get("match_rule"),
+            is_ignored=bool(prop and prop.get("match_rule") == "ignored_by_default"),
+        )
+        db.add(m)
+        stats["created"] += 1
+        if m.is_ignored:
+            stats["ignored"] += 1
+        elif m.asset_id:
+            stats["proposed"] += 1
+    db.commit()
+    return stats
+
+
+def resolve_asset_id(target_text: str, db: Session) -> Optional[int]:
+    """Resout un target vers asset_id via la table de mapping.
+    C'est LA fonction utilisee en production (event-driven + apply)."""
+    t = (target_text or "").strip()
+    if not t:
+        return None
+    m = db.query(TargetAssetMapping).filter(
+        TargetAssetMapping.target_text == t
+    ).first()
+    if m and m.asset_id and not m.is_ignored:
+        return m.asset_id
+    return None
+
+
+def requirements_for_target(target_text: str, db: Session) -> List[ReferenceRequirement]:
+    """Exigences Configuration_Securite candidates pour un target."""
+    return db.query(ReferenceRequirement).filter(
+        ReferenceRequirement.entry_type == "requirement",
+        ReferenceRequirement.target == target_text,
+    ).all()

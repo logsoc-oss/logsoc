@@ -1,0 +1,48 @@
+type: intrusion
+label: "Intrusion (APT) — Checklist de crise"
+tasks:
+  - label: "Confirmer l'intrusion (IOCs, TTPs, mapping MITRE ATT&CK)"
+    priority: critical
+    assigned_to: analyst
+  - label: "Évaluer l'étendue de la compromission (systèmes, durée, données)"
+    priority: critical
+    assigned_to: analyst
+  - label: "Isoler les systèmes compromis (sans alerter l'attaquant si possible)"
+    priority: critical
+    assigned_to: admin
+  - label: "Préserver les preuves (memory dump, logs, captures réseau)"
+    priority: critical
+    assigned_to: analyst
+  - label: "Notifier le RSSI et la direction"
+    priority: high
+    assigned_to: admin
+  - label: "Notifier l'ANSSI et CSIRT-FR (NIS2 — 24h max)"
+    priority: high
+    assigned_to: compliance_officer
+  - label: "Éradication — supprimer persistence, backdoors, comptes créés"
+    priority: critical
+    assigned_to: admin
+  - label: "Rotation de tous les credentials (mots de passe, clés, tokens, API keys)"
+    priority: critical
+    assigned_to: admin
+  - label: "Activer MFA sur tous les comptes si pas encore fait"
+    priority: high
+    assigned_to: admin
+  - label: "Renforcer la segmentation réseau et monitoring"
+    priority: high
+    assigned_to: admin
+  - label: "Surveiller les tentatives de re-compromission (logs SIEM)"
+    priority: high
+    assigned_to: analyst
+  - label: "Communication interne restreinte (need-to-know)"
+    priority: medium
+    assigned_to: admin
+  - label: "Communication externe si données clients impactées"
+    priority: medium
+    assigned_to: compliance_officer
+  - label: "Rédiger le rapport forensique détaillé"
+    priority: high
+    assigned_to: analyst
+  - label: "Post-mortem et plan d'amélioration"
+    priority: medium
+    assigned_to: analyst

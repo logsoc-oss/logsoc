@@ -1,0 +1,18 @@
+[Unit]
+Description=Weekly purge of compliance_audit (>3y) and gdpr_audit (>10y)
+Documentation=man:purge_old_audit.py
+Requires=logsoc-audit-purge.service
+
+[Timer]
+# Every Sunday at 03:00 UTC (low-traffic time)
+OnCalendar=Sun *-*-* 03:00:00
+# If the timer missed (system was off), run it ASAP on next boot
+Persistent=true
+# Random delay up to 5min to avoid thundering herd if multiple
+# logsoc hosts share the same DB
+RandomizedDelaySec=300
+# Use the service's execution environment
+Unit=logsoc-audit-purge.service
+
+[Install]
+WantedBy=timers.target

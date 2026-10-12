@@ -1,0 +1,27 @@
+[Unit]
+Description=LOGSOC audit tables purge (T68)
+Documentation=man:purge_old_audit.py
+# Don't run if the backend is being stopped/restarted
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+# Run from the backend install dir so config.yaml is found
+WorkingDirectory=/opt/logsoc-web
+# Use the system Python (pymysql is available there per T68 setup).
+# If you have a venv with pymysql, swap to that path.
+ExecStart=/usr/bin/python3 /opt/logsoc-web/tools/purge_old_audit.py --apply
+# Use the logsoc service user if it has read access to config.yaml,
+# else fall back to root.
+User=root
+Group=root
+# Capture stdout/stderr to journald
+StandardOutput=journal
+StandardError=journal
+# Don't start more than once
+RemainAfterExit=no
+# Fail fast on errors
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

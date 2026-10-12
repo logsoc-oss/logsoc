@@ -1,0 +1,45 @@
+type: ddos
+label: "DDoS — Checklist de crise"
+tasks:
+  - label: "Confirmer l'attaque DDoS (distinguer d'un pic de trafic légitime)"
+    priority: critical
+    assigned_to: analyst
+  - label: "Identifier le type d'attaque (volumétrique, protocol, application layer)"
+    priority: critical
+    assigned_to: analyst
+  - label: "Activer la protection anti-DDoS (CDN, WAF, scrubbing center)"
+    priority: critical
+    assigned_to: admin
+  - label: "Notifier le RSSI et la direction"
+    priority: high
+    assigned_to: admin
+  - label: "Collecter les IOCs (IPs sources, patterns de trafic)"
+    priority: high
+    assigned_to: analyst
+  - label: "Bloquer les IP sources en temps réel (firewall, iptables)"
+    priority: critical
+    assigned_to: admin
+  - label: "Limiter les services non essentiels pour préserver la bande passante"
+    priority: high
+    assigned_to: admin
+  - label: "Communiquer avec le prestataire anti-DDoS / hébergeur"
+    priority: high
+    assigned_to: admin
+  - label: "Surveiller les indicateurs de résolution (trafic, latence, disponibilité)"
+    priority: high
+    assigned_to: analyst
+  - label: "Notifier l'ANSSI si incident significatif (NIS2)"
+    priority: medium
+    assigned_to: compliance_officer
+  - label: "Communication externe si service client impacté"
+    priority: medium
+    assigned_to: compliance_officer
+  - label: "Vérifier que l'attaque ne masque pas une autre intrusion"
+    priority: high
+    assigned_to: analyst
+  - label: "Analyser les logs post-attaque pour durcir la configuration"
+    priority: medium
+    assigned_to: analyst
+  - label: "Rédiger le post-mortem et leçons apprises"
+    priority: medium
+    assigned_to: analyst

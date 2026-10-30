@@ -1,0 +1,48 @@
+type: ransomware
+label: "Ransomware — Checklist de crise"
+tasks:
+  - label: "Isoler les machines infectées du réseau"
+    priority: critical
+    assigned_to: admin
+  - label: "Couper les partages réseau et les sauvegardes en ligne"
+    priority: critical
+    assigned_to: admin
+  - label: "Préserver les preuves (snapshot VM, memory dump)"
+    priority: critical
+    assigned_to: analyst
+  - label: "Notifier le RSSI et la direction"
+    priority: high
+    assigned_to: admin
+  - label: "Vérifier l'intégrité des sauvegardes offline"
+    priority: high
+    assigned_to: admin
+  - label: "Identifier le vecteur d'entrée (phishing, RDP, vulnérabilité)"
+    priority: high
+    assigned_to: analyst
+  - label: "Notifier l'ANSSI (NIS2 — 24h max)"
+    priority: high
+    assigned_to: compliance_officer
+  - label: "Notifier la CNIL si données personnelles impactées (RGPD — 72h)"
+    priority: medium
+    assigned_to: compliance_officer
+  - label: "Évaluer option restauration vs négociation (ne pas payer sans avis juridique)"
+    priority: high
+    assigned_to: admin
+  - label: "Commencer la restauration depuis sauvegardes saines"
+    priority: medium
+    assigned_to: admin
+  - label: "Communication interne — informer les employés"
+    priority: medium
+    assigned_to: admin
+  - label: "Communication externe — clients et presse si nécessaire"
+    priority: medium
+    assigned_to: compliance_officer
+  - label: "Analyse forensique complète"
+    priority: high
+    assigned_to: analyst
+  - label: "Remédiation — patcher le vecteur et durcir les systèmes"
+    priority: high
+    assigned_to: admin
+  - label: "Rédiger le post-mortem et leçons apprises"
+    priority: medium
+    assigned_to: analyst

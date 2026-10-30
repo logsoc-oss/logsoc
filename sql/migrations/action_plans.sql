@@ -1,0 +1,46 @@
+-- Action Plans tables
+CREATE TABLE IF NOT EXISTS action_plans (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  action_id VARCHAR(32) NOT NULL UNIQUE,
+  title VARCHAR(255) NOT NULL,
+  description TEXT NULL,
+  source VARCHAR(64) NOT NULL DEFAULT 'other',
+  source_ref VARCHAR(128) NULL,
+  category VARCHAR(32) NOT NULL DEFAULT 'remediation',
+  priority VARCHAR(16) NOT NULL DEFAULT 'medium',
+  pilot_id INT NULL,
+  actor_id INT NULL,
+  target_date DATE NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'a_planifier',
+  progress INT DEFAULT 0,
+  proof_file_data LONGBLOB NULL,
+  proof_file_name VARCHAR(255) NULL,
+  proof_file_type VARCHAR(128) NULL,
+  proof_file_size INT NULL,
+  rejection_comment TEXT NULL,
+  risk_acceptance_reason TEXT NULL,
+  compliance_ref VARCHAR(64) NULL,
+  linked_policy_doc_id INT NULL,
+  linked_policy_page_id INT NULL,
+  linked_asset_id INT NULL,
+  linked_vendor_id INT NULL,
+  created_by INT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  closed_at DATETIME NULL,
+  INDEX idx_ap_status (status),
+  INDEX idx_ap_priority (priority),
+  INDEX idx_ap_pilot (pilot_id),
+  INDEX idx_ap_target_date (target_date)
+);
+
+CREATE TABLE IF NOT EXISTS action_plan_history (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  action_plan_id INT NOT NULL,
+  action_type VARCHAR(32) NOT NULL,
+  user_id INT NULL,
+  username VARCHAR(64) NULL,
+  comment TEXT NULL,
+  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_aph_action (action_plan_id)
+);

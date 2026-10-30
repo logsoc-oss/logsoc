@@ -1,0 +1,22 @@
+-- Phase 1.3 — SSO (SAML/OIDC) configuration & user link tables.
+
+CREATE TABLE IF NOT EXISTS sso_config (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  provider VARCHAR(32) NOT NULL,
+  name VARCHAR(64) NOT NULL,
+  config JSON NOT NULL,
+  attribute_mapping JSON DEFAULT NULL,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS user_sso_link (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  provider VARCHAR(32) NOT NULL,
+  external_id VARCHAR(255) NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_provider_external_id (provider, external_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -1,0 +1,128 @@
+# ANSSI ReCyF — Notification de cybersécurité (France)
+# Template pour la déclaration d'incident à l'ANSSI via ReCyF
+# Référence: NIS2 — article L.12 du code de la sécurité intérieure
+
+authority: anssi
+regulation: nis2
+name: "ANSSI ReCyF — Déclaration d'incident cybersécurité"
+authority_contact:
+  name: "ANSSI — Agence nationale de la sécurité des systèmes d'information"
+  portal: "https://recyf.ssi.gouv.fr"
+  email: "cert-fr@ssi.gouv.fr"
+  phone: "+33 1 71 75 84 68"
+  address: "51, rue de La Vanne — 92120 Montrouge, France"
+
+sections:
+  - title: "Identification de l'entité déclarante"
+    fields:
+      - key: entity_name
+        label: "Nom de l'organisme"
+        required: true
+      - key: entity_type
+        label: "Type d'entité (opérateur essentiel / fournisseur de services numériques)"
+        required: true
+      - key: entity_siret
+        label: "Numéro SIRET"
+        required: true
+      - key: contact_name
+        label: "Nom du déclarant"
+        required: true
+      - key: contact_role
+        label: "Fonction / Rôle"
+        required: true
+      - key: contact_email
+        label: "Email de contact"
+        required: true
+      - key: contact_phone
+        label: "Téléphone de contact"
+        required: true
+
+  - title: "Description de l'incident"
+    fields:
+      - key: detection_timestamp
+        label: "Date et heure de détection"
+        required: true
+        ai_fill: detection_timestamp
+      - key: incident_nature
+        label: "Nature de l'incident (ransomware, exfiltration, déni de service, compromission, etc.)"
+        required: true
+      - key: attack_vector
+        label: "Vecteur d'attaque identifié"
+        ai_fill: attack_vector
+      - key: impact_description
+        label: "Description détaillée de l'impact"
+        required: true
+        ai_fill: impact_description
+      - key: affected_assets
+        label: "Actifs et systèmes impactés"
+        required: true
+        ai_fill: affected_assets
+
+  - title: "Étendue et gravité"
+    fields:
+      - key: severity
+        label: "Gravité (critique / élevée / moyenne / faible)"
+        required: true
+        ai_fill: severity
+      - key: data_types_affected
+        label: "Types de données affectées (données personnelles, données sensibles, données opérationnelles)"
+        required: true
+      - key: number_affected
+        label: "Nombre estimé de personnes / systèmes affectés"
+        required: false
+        ai_fill: number_affected
+      - key: geographic_scope
+        label: "Périmètre géographique"
+        required: false
+
+  - title: "Mesures prises et en cours"
+    fields:
+      - key: containment_measures
+        label: "Mesures de confinement prises"
+        required: true
+        ai_fill: containment_measures
+      - key: eradication_measures
+        label: "Mesures d'éradication"
+        required: false
+      - key: recovery_measures
+        label: "Mesures de reprise"
+        required: false
+      - key: timeline_summary
+        label: "Chronologie des événements"
+        required: true
+        ai_fill: timeline_summary
+
+  - title: "Information complémentaire"
+    fields:
+      - key: other_authorities_notified
+        label: "Autres autorités notifiées (CNIL, procureur, etc.)"
+        required: false
+      - key: media_coverage
+        label: "Couverture médiatique (oui/non, détails)"
+        required: false
+      - key: additional_info
+        label: "Informations complémentaires"
+        required: false
+
+prompt_template: |
+  Tu es un assistant RSSI chargé de rédiger une notification d'incident cybersécurité à l'ANSSI (Agence nationale de la sécurité des systèmes d'information) via la plateforme ReCyF.
+  
+  Règle: la notification doit être soumise dans les 24 heures suivant la détection (NIS2 / LCSI).
+  
+  À partir des informations d'incident ci-dessous, génère une déclaration structurée contenant:
+  1. Identification de l'entité déclarante
+  2. Description de l'incident (nature, vecteur, impact)
+  3. Étendue et gravité
+  4. Mesures prises et chronologie
+  5. Informations complémentaires
+  
+  Informations d'incident:
+  - Date de détection: {detection_timestamp}
+  - Gravité: {severity}
+  - Actifs impactés: {affected_assets}
+  - Alertes: {alerts_summary}
+  - Checklist complétée: {checklist_summary}
+  - Chronologie: {timeline_summary}
+  - Informations organisation: {org_info}
+
+  Rédige la notification au format structuré, en français, avec un ton professionnel et factuel.

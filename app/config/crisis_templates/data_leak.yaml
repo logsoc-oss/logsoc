@@ -1,0 +1,45 @@
+type: data_leak
+label: "Fuite de données — Checklist de crise"
+tasks:
+  - label: "Identifier la source de la fuite (interne, externe, erreur)"
+    priority: critical
+    assigned_to: analyst
+  - label: "Contenir la fuite (couper accès, révoquer tokens, isoler système)"
+    priority: critical
+    assigned_to: admin
+  - label: "Évaluer les données impactées (type, volume, personnes concernées)"
+    priority: critical
+    assigned_to: analyst
+  - label: "Notifier le RSSI et la DPO"
+    priority: critical
+    assigned_to: admin
+  - label: "Notifier la CNIL (RGPD Art. 33 — 72h si risque pour les droits)"
+    priority: high
+    assigned_to: compliance_officer
+  - label: "Notifier l'ANSSI si incident significatif (NIS2 — 24h)"
+    priority: high
+    assigned_to: compliance_officer
+  - label: "Informer les personnes concernées (RGPD Art. 34 si risque élevé)"
+    priority: high
+    assigned_to: compliance_officer
+  - label: "Communication interne — informer les employés"
+    priority: medium
+    assigned_to: admin
+  - label: "Communication clients si données clients impactées"
+    priority: high
+    assigned_to: compliance_officer
+  - label: "Analyse forensique — vecteur, étendue, timeline"
+    priority: high
+    assigned_to: analyst
+  - label: "Vérifier si des copies des données existent ailleurs"
+    priority: medium
+    assigned_to: analyst
+  - label: "Remédiation — patcher le vecteur de fuite"
+    priority: high
+    assigned_to: admin
+  - label: "Renforcer les contrôles DLP (Data Loss Prevention)"
+    priority: medium
+    assigned_to: admin
+  - label: "Rédiger le post-mortem et leçons apprises"
+    priority: medium
+    assigned_to: analyst

@@ -1,0 +1,29 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+venv/
+.venv/
+*.egg-info/
+node_modules/
+dist/
+.pytest_cache/
+config.yaml
+*.db
+*.sqlite3
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+*.deb
+*.rpm
+# Real config (with secrets) — only config.yaml.example is tracked
+config.yaml
+
+# Secrets (T64.1) — never commit credentials
+secrets/
+
+documents/
+certs/

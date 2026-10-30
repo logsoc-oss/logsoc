@@ -1,0 +1,82 @@
+# ── LOGSOC-WEB Docker Compose ──
+# Mirrors the actual prod deployment on Hestia: API + retention sidecar.
+# MariaDB and ClickHouse run as systemd services on the host (not in Docker).
+# The React frontend is built locally and served by Nginx from public_html/.
+#
+# This compose is used identically in dev and prod — there is no separate
+# "dev" stack. For local development, install MariaDB and ClickHouse natively
+# (apt install mariadb-server clickhouse-server) and point the API at
+# 127.0.0.1 via /etc/logsoc/api.env.
+#
+# Usage on Hestia (prod):
+#   cd /opt/logsoc-web
+#   docker build -t logsoc-web-api:vX.Y.Z .                                # API
+#   docker build -f Dockerfile.retention -t logsoc-retention:vX.Y.Z .      # Sidecar
+#   docker compose up -d
+#
+# Secrets (MYSQL_PASSWORD, JWT_SECRET) come from the env_file (mode 600,
+# root:root). NEVER inline in this file.
+#
+# v0.6.2: backend-only Dockerfile, single-service compose, no DB containers.
+#         Removed dev profile (mysql/clickhouse), no more dockerised dev stack.
+# v0.10.0: added `retention` sidecar (issue #4) — runs daily anonymize/erase
+#          sweeps independently of the API. Shares MariaDB+ClickHouse with
+#          the API (no extra DBs in Docker).
+
+version: "3.8"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: logsoc-web-api:${LOGSOC_VERSION:-latest}
+    container_name: logsoc-api
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - ${LOGSOC_ENV_FILE:-/etc/logsoc/api.env}
+    environment:
+      - LOGSOC_ENV=production
+    # No host mounts — plugins are baked into the image.
+    volumes: []
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:8000/health')
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # v0.10.0 — Retention sidecar (issue #4)
+  # Background scheduler for jobs.run_daily_sweep() on a cron schedule.
+  # No port exposed; health check is process-based (pgrep).
+  retention:
+    build:
+      context: .
+      dockerfile: Dockerfile.retention
+    image: logsoc-retention:${LOGSOC_VERSION:-latest}
+    container_name: logsoc-retention
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - ${LOGSOC_ENV_FILE:-/etc/logsoc/api.env}
+    environment:
+      - LOGSOC_ENV=production
+      # Cron: 02:00 UTC daily. Operators can override via env_file
+      # (e.g. CRON_SCHEDULE="03:30" to shift the slot).
+      - CRON_SCHEDULE=${RETENTION_CRON:-02:00}
+      # Run an initial sweep on container start (for tests/dev).
+      # In prod, leave at 0 to avoid double-sweeps with the scheduler.
+      - RUN_ON_START=${RETENTION_RUN_ON_START:-0}
+      # Kill the sweep if it runs longer than 1h (safety net for
+      # runaway ALTER ... DELETE on huge partitions).
+      - SWEEP_TIMEOUT_SEC=${RETENTION_TIMEOUT_SEC:-3600}
+      - LOG_LEVEL=${RETENTION_LOG_LEVEL:-INFO}
+    volumes: []
+    # No HEALTHCHECK in compose — the Dockerfile's HEALTHCHECK uses
+    # pgrep which Docker auto-detects. The interval is 60s.
+

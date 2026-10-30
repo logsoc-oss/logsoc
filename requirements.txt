@@ -1,0 +1,31 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic[email]>=2.10,<3
+sqlalchemy==2.0.36
+pymysql==1.1.1
+cryptography==43.0.3
+bcrypt==4.2.1
+python-jose[cryptography]==3.3.0
+python-multipart==0.0.12
+clickhouse-connect==0.8.7
+bcrypt==4.2.1
+email-validator==2.2.0
+websockets==13.1
+httpx==0.27.2
+aiofiles==24.1.0
+PyYAML==6.0.2
+boto3==1.40.0
+pyarrow==24.0.0
+# T58 v3.14.0: YARA content fetch from agent → central
+# libyara Python binding for the central YARA scanner (v3.10+ for stable API)
+yara-python>=4.5.0
+# Phase 1.2: TOTP MFA
+pyotp>=2.9.0
+qrcode[pil]>=7.4
+# T25: War Room PDF export
+weasyprint>=62.0
+# Ticket #24: PDF export for policy diffusion audit
+fpdf2>=2.8.0
+# Policy documents: PDF/DOCX text extraction
+PyPDF2>=3.0.0
+python-docx>=1.0.0

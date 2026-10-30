@@ -1,0 +1,60 @@
+# ── LOGSOC Retention Sidecar (issue #4, v0.10.0) ─────────────────────
+# Background job runner that executes the daily retention sweep
+# (jobs.run_daily_sweep) on a cron schedule.
+#
+# Why a sidecar and not a FastAPI background task:
+#   - Decouples long-running operations from the API request path
+#   - Survives API restarts (jobs continue to run)
+#   - Easier to scale (can run multiple sidecars for HA in the future)
+#   - Clearer failure domain (sidecar crash doesn't take down the API)
+#
+# Schedule: configured via env var CRON_SCHEDULE (default: 02:00 daily).
+# Timezone: UTC. (Operators can set TZ=Europe/Paris if desired.)
+#
+# On startup, runs an initial sweep (configurable via RUN_ON_START).
+# Then sleeps until the next scheduled time, runs the job, sleeps,
+# etc. The loop is a single Python process — no separate cron daemon
+# needed (avoids extra process management on Hestia).
+#
+# To rebuild + deploy:
+#   docker build -f Dockerfile.retention -t logsoc-retention:v0.10.0 .
+#   docker save logsoc-retention:v0.10.0 | ssh srv-demo-core docker load
+#   ssh srv-demo-core 'cd /opt/logsoc-web && docker compose up -d retention'
+
+# ── Python Runtime (same as API) ──
+FROM python:3.13-slim AS runtime
+
+# System deps: gcc for any wheel compilation, tzdata for cron
+# timezone handling, procps for nice/killtree if needed.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libffi-dev tzdata procps && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python dependencies first (cache layer)
+# We use the same requirements.txt as the API to keep one source
+# of truth for the python deps. If the retention module needs
+# something the API doesn't, add it there too.
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy backend code (we need app/database.py, app/clickhouse_client.py,
+# app/models.py, app/retention/ — same as the API)
+COPY app/ ./app/
+
+# Copy the sidecar entrypoint
+COPY retention_entrypoint.py /app/retention_entrypoint.py
+
+# Non-root user (same as API for consistency)
+RUN useradd -r -s /bin/false logsoc && chown -R logsoc:logsoc /app
+USER logsoc
+
+# Health check: the sidecar doesn't expose a port, so we check the
+# process. If the Python process exits (e.g. unhandled exception),
+# the container is unhealthy. Docker can then restart it.
+HEALTHCHECK --interval=60s --timeout=5s --start-period=30s --retries=3 \
+    CMD pgrep -f "retention_entrypoint.py" > /dev/null || exit 1
+
+# Run the sidecar
+CMD ["python", "-u", "/app/retention_entrypoint.py"]

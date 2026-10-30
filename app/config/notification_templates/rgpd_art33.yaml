@@ -1,0 +1,114 @@
+# RGPD Article 33 — Notification de violation de données personnelles
+# Template pour la notification à la CNIL (ou autorité de protection des données)
+# Référence: Règlement (UE) 2016/679, Article 33
+
+authority: cnil
+regulation: rgpd
+name: "RGPD Art.33 — Notification de violation de données à caractère personnel"
+authority_contact:
+  name: "CNIL — Commission nationale de l'informatique et des libertés"
+  portal: "https://notifications.cnil.fr/notifications"
+  email: "notifications@cnil.fr"
+  phone: "+33 1 53 63 22 22"
+  address: "2, place Fontenoy — TSA 80715 — 75334 Paris Cedex 07, France"
+
+sections:
+  - title: "Identification du responsable de traitement"
+    fields:
+      - key: controller_name
+        label: "Nom du responsable de traitement"
+        required: true
+      - key: controller_representative
+        label: "Représentant du responsable (si établi hors UE)"
+        required: false
+      - key: dpo_name
+        label: "Nom du DPO (Délégué à la Protection des Données)"
+        required: true
+      - key: dpo_contact
+        label: "Coordonnées du DPO (email / téléphone)"
+        required: true
+      - key: controller_address
+        label: "Adresse du responsable"
+        required: true
+
+  - title: "Description de la violation"
+    fields:
+      - key: breach_nature
+        label: "Nature de la violation (destruction, perte, altération, divulgation non autorisée)"
+        required: true
+      - key: detection_timestamp
+        label: "Date et heure de la découverte de la violation"
+        required: true
+        ai_fill: detection_timestamp
+      - key: breach_start_date
+        label: "Date estimée du début de la violation"
+        required: true
+      - key: categories_data
+        label: "Catégories de données à caractère personnel concernées"
+        required: true
+        ai_fill: categories_data
+      - key: data_subjects
+        label: "Catégories et nombre approximatif de personnes concernées"
+        required: true
+        ai_fill: data_subjects
+      - key: likely_consequences
+        label: "Conséquences probables de la violation pour les personnes concernées"
+        required: true
+        ai_fill: likely_consequences
+
+  - title: "Mesures prises ou proposées"
+    fields:
+      - key: containment_measures
+        label: "Mesures prises pour limiter les effets de la violation"
+        required: true
+        ai_fill: containment_measures
+      - key: notification_to_subjects
+        label: "Les personnes concernées ont-elles été informées ? (Si oui, quand et comment)"
+        required: true
+      - key: mitigating_measures
+        label: "Mesures d'atténuation proposées"
+        required: true
+        ai_fill: mitigating_measures
+      - key: timeline_summary
+        label: "Chronologie des événements"
+        required: true
+        ai_fill: timeline_summary
+
+  - title: "Information complémentaire"
+    fields:
+      - key: other_authorities_notified
+        label: "Autres autorités notifiées"
+        required: false
+      - key: is_dpo_appointed
+        label: "Un DPO est-il désigné ?"
+        required: true
+      - key: cross_border
+        label: "La violation touche-t-elle des personnes dans d'autres États membres ?"
+        required: false
+      - key: additional_info
+        label: "Informations complémentaires"
+        required: false
+
+prompt_template: |
+  Tu es un assistant DPO (Délégué à la Protection des Données) chargé de rédiger une notification de violation de données personnelles conformément à l'Article 33 du RGPD.
+  
+  Règle: la notification doit être adressée à la CNIL dans les 72 heures suivant la découverte de la violation.
+  
+  À partir des informations d'incident ci-dessous, génère une notification structurée contenant:
+  1. Identification du responsable de traitement
+  2. Description de la violation (nature, catégories de données, personnes concernées)
+  3. Conséquences probables pour les personnes concernées
+  4. Mesures prises ou proposées pour remédier à la violation
+  5. Information sur la communication aux personnes concernées
+  
+  Informations d'incident:
+  - Date de détection: {detection_timestamp}
+  - Gravité: {severity}
+  - Actifs impactés: {affected_assets}
+  - Alertes: {alerts_summary}
+  - Checklist complétée: {checklist_summary}
+  - Chronologie: {timeline_summary}
+  - Données personnelles impliquées: {personal_data_info}
+  - Informations organisation: {org_info}
+  
+  Rédige la notification au format structuré, en français, avec un ton formel et juridique approprié.
